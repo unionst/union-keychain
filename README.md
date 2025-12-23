@@ -1,13 +1,14 @@
 # UnionKeychain
 
-A lightweight, easy-to-use Swift keychain wrapper for iOS 17+.
+A lightweight, type-safe Swift keychain wrapper for iOS 17+ and macOS 14+.
 
 ## Features
 
-- Simple static API for quick access to common keychain values
-- Generic methods for storing various data types
-- Property wrappers for seamless integration with your models
-- Modern Swift API with async/await support
+- Simple static API for quick access to keychain storage
+- Type-safe methods for strings, booleans, and binary data
+- Property wrappers for declarative storage
+- Persistent storage that survives app uninstalls
+- Perfect for free trial tracking and authentication tokens
 
 ## Installation
 
@@ -16,93 +17,126 @@ A lightweight, easy-to-use Swift keychain wrapper for iOS 17+.
 Add the following dependency to your `Package.swift` file:
 
 ```swift
-.package(url: "https://github.com/yourusername/UnionKeychain.git", from: "1.0.0")
+.package(url: "https://github.com/yourusername/union-keychain.git", from: "1.0.0")
 ```
 
-Or add it directly in Xcode using File → Add Packages...
+Or add it directly in Xcode using **File → Add Packages...**
 
 ## Usage
 
-### Important: App Isolation
-
-When multiple apps on the same device use this package, each app must use its own service name to avoid security issues. Set this in your AppDelegate or early in app initialization:
+### Basic Storage
 
 ```swift
-// In AppDelegate.swift or early in app setup
-Keychain.defaultService = Bundle.main.bundleIdentifier ?? "com.yourcompany.app"
-```
+import UnionKeychain
 
-### Basic Usage
-
-```swift
-// Store a token
-Keychain.bearerToken = "your-token-string"
-
-// Retrieve a token
-if let token = Keychain.bearerToken {
+Keychain.setString("secret_token", forKey: "apiToken")
+if let token = Keychain.getString(forKey: "apiToken") {
     print("Token: \(token)")
 }
 
-// Remove a token
-Keychain.bearerToken = nil
+Keychain.setBool(true, forKey: "hasCompletedOnboarding")
+if Keychain.getBool(forKey: "hasCompletedOnboarding") == true {
+    showMainInterface()
+}
+
+let imageData = UIImage(named: "avatar")?.jpegData(compressionQuality: 0.8)
+Keychain.setData(imageData, forKey: "profileImage")
+if let data = Keychain.getData(forKey: "profileImage") {
+    let image = UIImage(data: data)
+}
 ```
 
-### Generic Methods
+### Convenience Properties
 
 ```swift
-// Store a string
-Keychain.setString("some-value", forKey: "custom-key")
+Keychain.bearerToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 
-// Retrieve a string
-let value = Keychain.getString(forKey: "custom-key")
+if let token = Keychain.bearerToken {
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+}
 
-// Store a boolean
-Keychain.setBool(true, forKey: "feature-enabled")
-
-// Store data
-let data = "Hello World".data(using: .utf8)!
-Keychain.setData(data, forKey: "some-data")
+if !Keychain.usedFreeAccount {
+    Keychain.usedFreeAccount = true
+    presentFreeTrial()
+}
 ```
 
 ### Property Wrappers
 
 ```swift
-class UserSettings {
-    @KeychainString(key: "user-token")
-    var token: String?
+class UserSession {
+    @KeychainString(key: "username")
+    var username: String?
     
-    @KeychainBool(key: "is-premium", defaultValue: false)
+    @KeychainBool(key: "isPremium", defaultValue: false)
     var isPremium: Bool
     
-    @KeychainData(key: "user-avatar")
-    var avatarData: Data?
+    @KeychainData(key: "certificate")
+    var certificate: Data?
 }
 
-// Usage
-let settings = UserSettings()
-settings.token = "new-token"
-settings.isPremium = true
+let session = UserSession()
+session.username = "john_doe"
+session.isPremium = true
 ```
 
-### Cross-App Keychain Sharing
+### Persistent Free Trial Tracking
 
-If you need to share keychain items between apps:
-
-1. Enable keychain sharing in your app's entitlements
-2. Use the same access group for both apps
-3. Use a custom service name that's the same in both apps:
+Unlike UserDefaults, keychain data persists even when the app is uninstalled and reinstalled. This makes it perfect for tracking free trial usage:
 
 ```swift
-// App 1 and App 2 both use this same service name
-let sharedService = "com.yourcompany.shared-keychain"
-
-// Store data in App 1
-Keychain.setString("shared-secret", forKey: "shared-key", service: sharedService)
-
-// Access same data in App 2
-let sharedValue = Keychain.getString(forKey: "shared-key", service: sharedService)
+func checkTrialEligibility() {
+    if Keychain.usedFreeAccount {
+        showPaywall()
+    } else {
+        Keychain.usedFreeAccount = true
+        startFreeTrial()
+    }
+}
 ```
+
+Users cannot bypass trial restrictions by simply reinstalling your app.
+
+### Custom Service Names
+
+```swift
+Keychain.setString("value", forKey: "key", service: "com.myapp.custom")
+let value = Keychain.getString(forKey: "key", service: "com.myapp.custom")
+```
+
+### Removing Values
+
+Set any value to `nil` to remove it from the keychain:
+
+```swift
+Keychain.setString(nil, forKey: "apiToken")
+Keychain.setBool(nil, forKey: "isPremium")
+Keychain.setData(nil, forKey: "certificate")
+```
+
+## API Reference
+
+### Static Methods
+
+- `getString(forKey:service:) -> String?`
+- `setString(_:forKey:service:) -> Bool`
+- `getData(forKey:service:) -> Data?`
+- `setData(_:forKey:service:) -> Bool`
+- `getBool(forKey:service:) -> Bool?`
+- `setBool(_:forKey:service:) -> Bool`
+
+### Static Properties
+
+- `defaultService: String` - The default service identifier
+- `bearerToken: String?` - Convenience property for auth tokens
+- `usedFreeAccount: Bool` - Convenience property for trial tracking
+
+### Property Wrappers
+
+- `@KeychainString` - Optional string storage
+- `@KeychainBool` - Boolean storage with default value
+- `@KeychainData` - Optional binary data storage
 
 ## License
 
-[Your License] 
+MIT License
