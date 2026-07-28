@@ -7,6 +7,7 @@
 
 import Foundation
 import Security
+import os
 
 /// A type-safe interface for securely storing and retrieving sensitive data using the system keychain.
 ///
@@ -279,6 +280,7 @@ public enum Keychain {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
             kSecValueData as String: data
         ]
 
@@ -306,10 +308,29 @@ public enum Keychain {
         let status = SecItemCopyMatching(query as CFDictionary, &dataTypeRef)
 
         if status == errSecSuccess {
+            migrateAccessibility(service: service, account: account)
             return dataTypeRef as? Data
         }
 
         return nil
+    }
+
+    private static let migratedAccounts = OSAllocatedUnfairLock<Set<String>>(initialState: [])
+
+    private static func migrateAccessibility(service: String, account: String) {
+        let key = "\(service)/\(account)"
+        let firstAttempt = migratedAccounts.withLock { $0.insert(key).inserted }
+        guard firstAttempt else { return }
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        let update: [String: Any] = [
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+        SecItemUpdate(query as CFDictionary, update as CFDictionary)
     }
 
     @discardableResult private static func remove(service: String, account: String) -> Bool {
