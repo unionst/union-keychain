@@ -7,6 +7,7 @@
 
 import Foundation
 import Security
+import os
 
 /// A type-safe interface for securely storing and retrieving sensitive data using the system keychain.
 ///
@@ -195,7 +196,9 @@ public struct Keychain: Sendable {
         ]
         var ref: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &ref)
-        return status == errSecSuccess ? (ref as? Data) : nil
+        guard status == errSecSuccess else { return nil }
+        migrateAccessibility(forKey: key)
+        return ref as? Data
     }
 
     /// Stores binary data in this keychain, or removes it if `nil`.
@@ -279,6 +282,24 @@ public struct Keychain: Sendable {
             kSecAttrAccount as String: key,
         ]
         return SecItemDelete(query as CFDictionary) == errSecSuccess
+    }
+
+    private static let migratedKeys = OSAllocatedUnfairLock<Set<String>>(initialState: [])
+
+    private func migrateAccessibility(forKey key: String) {
+        let entry = "\(service)/\(key)"
+        let firstAttempt = Self.migratedKeys.withLock { $0.insert(entry).inserted }
+        guard firstAttempt else { return }
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+        ]
+        let update: [String: Any] = [
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+        SecItemUpdate(query as CFDictionary, update as CFDictionary)
     }
 }
 
